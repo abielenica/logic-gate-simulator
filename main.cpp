@@ -1,45 +1,62 @@
 #include <regex>
+#include <iostream>
 #include <vector>
+#include <unordered_set>
 #include <unordered_map>
+
+enum class in_type : uint8_t {
+    UNARY  = 1,
+    BINARY = 2,
+    MULTI  = UINT8_MAX
+};
 
 /* Type representing an ordinal of a signal. */
 using sig_t = int32_t;
+
+/* Type representing a gate name and type of input. */
+using gate_t = std::pair<std::string, in_type>;
 
 /* Type representing a gate name and a collection of input signals. */
 using gate_input = std::pair<std::string, std::vector<sig_t>>;
 
 /* Type representing a graph-structured logic gate system. */
-using gate_graph = std::unordered_map<sig_t, gate_input>; // TODO: Czy na pewno unordered?
+using gate_graph = std::unordered_map<sig_t, gate_input>;
 
-/* Type representing a mapping of input to output of a gate system. */
-using truth_table = std::vector<std::vector<bool>>; // TODO: Nie wiem, czy taki typ dla ciebie jest ok?
+std::regex get_signal_regex(in_type type) {
+    const std::string global_pattern{("( [1-9]\\d{0,8})")};
 
-// TODO: Uogólnię potem to tak, żeby nie sprawdzać nazwę, tylko typ (unary, binary, multi)
-std::regex get_signal_regex(const std::string& gate_name) {
-    const std::string sig_pattern{" [1-9]\\d{0,8}"};
-    if (gate_name == "NOT")
-        return std::regex("(" + sig_pattern +"){2}");
-    else if (gate_name == "XOR")
-        return std::regex("(" + sig_pattern + "){3}");
-    return std::regex("(" + sig_pattern + "){3,}");
+    if (type == in_type::MULTI)
+        return std::regex(global_pattern + "{3,}");
+
+    const auto ordinal{static_cast<int8_t>(type)};
+    const auto repetitions{std::to_string(1 + ordinal)};
+
+    return std::regex(global_pattern + "{" + repetitions + "}");
 }
 
-static auto name_regex_matcher() {
-    return [](const std::string& name) {
-        return std::make_pair(name, get_signal_regex(name));
+static auto regex_matcher() {
+    return [](const gate_t& gate) {
+        return std::make_pair(gate.first,get_signal_regex(gate.second));
     };
 }
 
 int main() {
-    const std::vector<std::string> gates = {
-            "NOT", "AND", "NAND",
-            "OR", "XOR", "NOR"
-    };
+    // TODO: create macro make_gates
+    const std::vector<gate_t> gates{{
+            {"NOT", in_type::UNARY},
+            {"XOR", in_type::BINARY},
+            {"AND", in_type::MULTI},
+            {"NAND", in_type::MULTI},
+            {"OR", in_type::MULTI},
+            {"NOR", in_type::MULTI}
+    }};
+
 
     std::unordered_map<std::string, std::regex> sig_regex;
     std::transform(begin(gates), end(gates),
                    std::inserter(sig_regex, end(sig_regex)),
-                   name_regex_matcher());
+                   regex_matcher());
+
 
     return EXIT_SUCCESS;
 }
