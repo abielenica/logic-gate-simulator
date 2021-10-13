@@ -1,10 +1,70 @@
 #include <iostream>
-#include <numeric>
 #include <regex>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
-#include <list>
+#include <numeric>
+
+namespace logic {
+    using binseq = std::vector<bool>;
+
+    using binfunc = std::function<bool(binseq)>;
+
+    struct loperator {
+        virtual bool operator()(const binseq& seq) const = 0;
+    };
+
+    struct lnot : public loperator {
+        bool operator()(const binseq& seq) const override {
+            return !seq[0];
+        }
+    };
+
+    struct lxor : public loperator {
+        bool operator()(const binseq& seq) const override {
+            return seq[0] != seq[1];
+        }
+    };
+
+    struct land : public loperator {
+        bool operator()(const binseq& seq) const override {
+            return std::accumulate(begin(seq), end(seq), true, std::logical_and<>());
+        }
+    };
+
+    struct lor : public loperator {
+        bool operator()(const binseq& seq) const override {
+            return std::accumulate(begin(seq), end(seq), false, std::logical_or<>());
+        }
+    };
+
+    struct lnand : public loperator {
+        bool operator()(const binseq& seq) const override {
+            return !land()(seq);
+        }
+    };
+
+    struct lnor : public loperator {
+        bool operator()(const binseq& seq) const override {
+            return !lor()(seq);
+        }
+    };
+
+    binfunc match_function(const std::string& name) {
+        if (name == "NOT")
+            return lnot();
+        else if (name == "XOR")
+            return lxor();
+        else if (name == "AND")
+            return land();
+        else if (name == "OR")
+            return lor();
+        else if (name == "NAND")
+            return lnand();
+        else if (name == "NOR")
+            return lnor();
+        throw std::runtime_error("Operator " + name + " does not exist.");
+    }
+}
 
 namespace {
     enum class in_type : uint8_t {
@@ -13,17 +73,18 @@ namespace {
         MULTI = UINT8_MAX
     };
 
-/* Type representing an ordinal of a signal. */
     using sig_t = int32_t;
 
-/* Type representing a gate name and type of input. */
-    using gate_t = std::pair<std::string, in_type>;
+    using sigvector = std::vector<sig_t>;
 
-/* Type representing a gate name and a collection of input signals. */
-    using gate_input = std::pair<std::string, std::vector<sig_t>>;
+    template<typename T>
+    using sigmap = std::unordered_map<sig_t, T>;
 
-/* Type representing a graph-structured logic gate system. */
-    using gate_graph = std::unordered_map<sig_t, gate_input>;
+    using gate_t = std::pair<std::string, logic::binfunc>;
+
+    using gate_input = std::pair<logic::binfunc, sigvector>;
+
+    using gate_graph = sigmap<gate_input>;
 
     namespace error {
         void print_invalid_parsing_message(uint64_t line, const std::string &info) {
@@ -48,7 +109,7 @@ namespace {
             return std::regex(sig_pattern + "{3,}");
 
         auto ordinal{static_cast<int8_t>(type)};
-        auto repetitions{std::to_string(1 + ordinal)};
+        auto repetitions{std::to_string(ordinal + 1)};
 
         return std::regex(sig_pattern + "{" + repetitions + "}");
     }
@@ -74,26 +135,23 @@ namespace {
     void visit_node(sig_t node, const gate_graph &graph,
                     std::vector<sig_t> &sorted_input,
                     std::unordered_map<sig_t, bool> &visited_status) {
-      if (visited_status.contains(node) && visited_status.at(node))
-        return;
-      if (visited_status.contains(node) && !visited_status.at(node)) {
-        std::cout
-        << "Error: sequential logic analysis has not yet been implemented.\n";
-        return; //??? powinniśmy teraz zakończyć przetwarzanie tej mapy i odrzucić
-        //ją całą
-        // ale nie bardzo wiem jak to zakomunikować reszcie programu, jakąś flagą?
-      }
-      visited_status.insert({node, false});
-      for (sig_t input_signal : graph.at(node).second) {
-        visit_node(input_signal, graph, sorted_input, visited_status);
-      }
-      visited_status[node] = true;
-      sorted_input.push_back(node);
+        if (visited_status.contains(node) && visited_status.at(node))
+            return;
+        if (visited_status.contains(node) && !visited_status.at(node)) {
+            error::print_circuit_cycle_message();
+            return; // TODO: flaga?
+        }
+        visited_status.insert({node, false});
+        for (sig_t input_signal: graph.at(node).second) {
+            visit_node(input_signal, graph, sorted_input, visited_status);
+        }
+        visited_status[node] = true;
+        sorted_input.push_back(node);
     }
 
     std::vector<sig_t> order_graph_by_input(const gate_graph &graph) {
-      std::unordered_map<sig_t, bool> marked_status;
-      std::vector<sig_t> sorted_input;
+      sigmap<bool> marked_status;
+      sigvector sorted_input;
       // To nie robi tego co opisuje algorytm, tylko przechodzi raz po wszystkich,
       // ale może się mylę???
       for (const auto &node : graph) {
@@ -103,7 +161,7 @@ namespace {
       return sorted_input;
     }
 
-    std::pair<std::vector<sig_t>, sig_t> parse_signals(const std::string &signals) {
+    std::pair<sigvector, sig_t> parse_signals(const std::string &signals) {
         std::istringstream sigstream{signals};
 
         sig_t output;
@@ -120,72 +178,56 @@ namespace {
         return {input, output};
     }
 
+    size_t count_inputs(const gate_graph &circuit, const sigvector &signals) {
+        size_t counter = 0;
 
-    size_t count_input_signals(const gate_graph &circuit,
-                               const std::vector<sig_t> &signals) {
-        size_t i = 0;
-        while (circuit.at(signals[i]).first == "NONE")
-            i++;
-        return i;
+        while (circuit.contains(signals[counter]))
+            counter++;
+
+        return counter;
     }
 
-    bool compute_single_gate(const gate_input &gate,
-                             std::map<sig_t, bool> &signal_values) {
-        std::vector<bool> gate_input_signals;
-        for (int i: gate.second) {
-            gate_input_signals.push_back(signal_values.at(i));
-        }
-        if (gate.first == "NOT") {
-            return !gate_input_signals[0];
-        } else if (gate.first == "XOR") {
-            return (gate_input_signals[0] != gate_input_signals[1]);
-        } else if (gate.first == "AND") {
-            return std::accumulate(gate_input_signals.begin(), gate_input_signals.end(),
-                                   false, std::logical_and<>());
-        } else if (gate.first == "NAND") {
-            return !std::accumulate(gate_input_signals.begin(),
-                                    gate_input_signals.end(), false,
-                                    std::logical_and<>());
-        } else if (gate.first == "OR") {
-            return std::accumulate(gate_input_signals.begin(), gate_input_signals.end(),
-                                   false, std::logical_or<>());
-        } else
-            return !std::accumulate(gate_input_signals.begin(),
-                                    gate_input_signals.end(), false,
-                                    std::logical_or<>());
+    bool evaluate_gate(const gate_input &in, sigmap<bool> &values) {
+        logic::binseq input;
+
+        for (int i: in.second)
+            input.push_back(values.at(i));
+
+        return in.first(input);
     }
 
     void compute_and_print_single_circuit_run(const gate_graph &circuit,
-                                              std::map<sig_t, bool> &signal_values,
+                                              sigmap<bool> &signal_values,
                                               const std::vector<sig_t> &signals,
                                               long input_size) {
         // tu z tymi iteratorami to się zagubiłam w akcji totalnie
         for (auto it = signals.cbegin() + input_size; it != signals.end(); ++it) {
             signal_values.insert_or_assign(
-                    *it, compute_single_gate((circuit.at(*it)), signal_values));
+                    *it, evaluate_gate((circuit.at(*it)), signal_values));
         }
-        for_each(begin(signal_values), end(signal_values),
-                 [](auto entry) { std::cout << entry.second; });
+
+        for (const auto& [_, value] : signal_values)
+            std::cout << value;
     }
 
-    void compute_and_print_all_possible_circuit_runs(
-            const gate_graph &circuit, const std::vector<sig_t> &signals) {
-        size_t input_size = count_input_signals(circuit, signals);
-        const size_t how_many_possible_inputs = 1 << input_size;
-        std::sort(signals.begin(), signals.begin() + (long) input_size,
-                  std::greater<>());
+    void compute_and_print_all_possible_circuit_runs(const gate_graph &circuit, const std::vector<sig_t> &signals) {
+        const size_t inputs_size = count_inputs(circuit, signals);
 
-        std::map<sig_t, bool> signal_values;
+        sigmap<bool> values;
+        auto possible_inputs{static_cast<int32_t>(1L << inputs_size)};
+        auto input_end{std::next(begin(signals), possible_inputs)};
 
-        for (size_t i = 0; i < how_many_possible_inputs; i++) {
+        std::sort(begin(signals), input_end, std::greater<>());
+
+        for (size_t i = 0; i < possible_inputs; i++) {
             size_t input_combination_no = i;
-            for (size_t j = 0; j < input_size; j++) {
+            for (size_t j = 0; j < inputs_size; j++) {
                 size_t signal_value = input_combination_no % 2;
-                signal_values.insert_or_assign(signals[j], signal_value);
+                values.insert_or_assign(signals[j], signal_value);
                 input_combination_no /= 2;
             }
-            compute_and_print_single_circuit_run(circuit, signal_values, signals,
-                                                 (long) input_size);
+            compute_and_print_single_circuit_run(circuit, values, signals,
+                                                 (long) inputs_size);
         }
     }
 }
@@ -213,15 +255,16 @@ int main() {
         if (std::regex_match(signals, sig_regex[name])) {
             auto [input, output]{parse_signals(name)};
             if (!graph.contains(output)) {
-                graph[output] = {name, input};
+                graph[output] = {logic::match_function(name), input};
             } else {
                 error::print_repetitive_output_message();
+                return EXIT_FAILURE;
             }
         } else {
             error::print_invalid_parsing_message(line, gate_info);
+            return EXIT_FAILURE;
         }
     }
-
 
     return EXIT_SUCCESS;
 }
