@@ -70,9 +70,37 @@ namespace {
             return std::make_pair(gate.first, make_sig_regex(gate.second));
         };
     }
+    
+    void visit_node(sig_t node, const gate_graph &graph,
+                    std::vector<sig_t> &sorted_input,
+                    std::unordered_map<sig_t, bool> &visited_status) {
+      if (visited_status.contains(node) && visited_status.at(node))
+        return;
+      if (visited_status.contains(node) && !visited_status.at(node)) {
+        std::cout
+        << "Error: sequential logic analysis has not yet been implemented.\n";
+        return; //??? powinniśmy teraz zakończyć przetwarzanie tej mapy i odrzucić
+        //ją całą
+        // ale nie bardzo wiem jak to zakomunikować reszcie programu, jakąś flagą?
+      }
+      visited_status.insert({node, false});
+      for (sig_t input_signal : graph.at(node).second) {
+        visit_node(input_signal, graph, sorted_input, visited_status);
+      }
+      visited_status[node] = true;
+      sorted_input.push_back(node);
+    }
 
     std::vector<sig_t> order_graph_by_input(const gate_graph &graph) {
-        return {}; // TODO: topological sort and check for cycle
+      std::unordered_map<sig_t, bool> marked_status;
+      std::vector<sig_t> sorted_input;
+      // To nie robi tego co opisuje algorytm, tylko przechodzi raz po wszystkich,
+      // ale może się mylę???
+      for (const auto &node : graph) {
+        if (!marked_status.contains(node.first) || !marked_status.at(node.first))
+          visit_node(node.first, graph, sorted_input, marked_status);
+      }
+      return sorted_input;
     }
 
     std::pair<std::vector<sig_t>, sig_t> parse_signals(const std::string &signals) {
