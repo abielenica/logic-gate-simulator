@@ -10,6 +10,8 @@ namespace logic {
     using binfunc = std::function<bool(binseq)>;
 
     struct loperator {
+        static constexpr uint8_t TWO_OR_MORE{UINT8_MAX};
+
         virtual bool operator()(const binseq& seq) const = 0;
     };
 
@@ -80,7 +82,7 @@ namespace {
     template<typename T>
     using sigmap = std::unordered_map<sig_t, T>;
 
-    using gate_t = std::pair<std::string, logic::binfunc>;
+    using gate_t = std::pair<std::string, in_type>;
 
     using gate_input = std::pair<logic::binfunc, sigvector>;
 
@@ -234,12 +236,9 @@ namespace {
 
 int main() {
     const std::vector<gate_t> gates{{
-            {"NOT", in_type::UNARY},
-            {"XOR", in_type::BINARY},
-            {"AND", in_type::MULTI},
-            {"NAND",in_type::MULTI},
-            {"OR",  in_type::MULTI},
-            {"NOR", in_type::MULTI}
+        {"NOT", in_type::UNARY}, {"XOR", in_type::BINARY},
+        {"AND", in_type::MULTI}, {"NAND",in_type::MULTI},
+        {"OR",  in_type::MULTI}, {"NOR", in_type::MULTI}
     }};
 
     std::unordered_map<std::string, std::regex> sig_regex;
