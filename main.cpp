@@ -264,10 +264,11 @@ namespace {
         std::sort(begin(order), end(order), [&](sig_t sigl, sig_t sigr) {
             return !circuit.contains(sigl) && circuit.contains(sigr);
         });
+
         std::sort(begin(order), input_end, std::greater<>());
 
         sigmap<bool> values;
-        for (size_t input{0}; input < combinations; input++) {
+        for (size_t input{0}; input < static_cast<size_t>(combinations); input++) {
             size_t input_ordinal = input;
             for (size_t bit{0}; bit < input_count; bit++) {
                 auto sig_val{static_cast<bool>(input_ordinal % 2)};
