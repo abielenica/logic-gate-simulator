@@ -213,11 +213,13 @@ namespace {
                 values[signal] = compute_gate(outputs, values);
             }
         });
+
         for (const auto& [_, value] : values)
             std::cout << value;
     }
 
-    void print_all_circuit_outputs(const gate_graph& circuit, sigvector& order) {
+    void print_all_circuit_outputs(const gate_graph& circuit) {
+        sigvector order{get_signal_evaluation_order(circuit)};
         const auto input_count{count_inputs(circuit, order)};
         const auto combinations{1L << input_count};
         auto input_end{std::next(begin(order), static_cast<int32_t>(input_count))};
@@ -254,22 +256,23 @@ int main() {
 
     for (uint64_t line{1}; std::getline(std::cin, gate_info); line++) {
         auto [name, signals]{split_by_first_space(gate_info)};
-        if (std::regex_match(signals, sig_regex[name])) {
-            auto [input, output]{parse_signals(signals)};
-            if (!circuit.contains(output)) {
-                circuit[output] = {logic::operator_of(name), input};
-            } else {
-                error::print_repetitive_output_message(line, output);
-                return EXIT_FAILURE;
-            }
-        } else {
+
+        if (!std::regex_match(signals, sig_regex[name])) {
             error::print_invalid_parsing_message(line, gate_info);
+            return EXIT_FAILURE;
+        }
+
+        auto [input, output]{parse_signals(signals)};
+
+        if (!circuit.contains(output)) {
+            circuit[output] = {logic::operator_of(name), input};
+        } else {
+            error::print_repetitive_output_message(line, output);
             return EXIT_FAILURE;
         }
     }
 
-    auto order{get_signal_evaluation_order(circuit)};
-    print_all_circuit_outputs(circuit, order);
+    print_all_circuit_outputs(circuit);
 
     return EXIT_SUCCESS;
 }
