@@ -163,7 +163,7 @@ namespace {
         visited[output] = false;
 
         const auto& inputs{circuit.at(output).second};
-        std::for_each(cbegin(inputs), cend(inputs), [&](sig_t input) {
+        std::for_each(begin(inputs), end(inputs), [&](sig_t input) {
             visit_gate(input, circuit, order, visited);
         });
 
@@ -175,7 +175,7 @@ namespace {
         sigvector order;
         sigmap<bool> visited;
 
-        std::for_each(cbegin(circuit), cend(circuit), [&](auto entry) {
+        std::for_each(begin(circuit), end(circuit), [&](auto entry) {
             const auto& inputs{entry.first};
             if (!visited.contains(inputs) || !visited.at(inputs))
                 visit_gate(inputs, circuit, order, visited);
@@ -197,7 +197,7 @@ namespace {
         logic::binseq input_values;
         const auto& inputs{gate_in.second};
 
-        std::for_each(cbegin(inputs), cend(inputs), [&](sig_t input) {
+        std::for_each(begin(inputs), end(inputs), [&](sig_t input) {
             input_values.push_back(values[input]);
         });
 
@@ -219,8 +219,8 @@ namespace {
 
     void print_all_circuit_outputs(const gate_graph& circuit, const sigvector& order) {
         const auto input_count{count_inputs(circuit, order)};
-        auto combinations{static_cast<int32_t>(1L << input_count)};
-        auto input_end{std::next(begin(order), combinations)};
+        const auto combinations{1L << input_count};
+        auto input_end{std::next(begin(order), static_cast<int32_t>(input_count)};
 
         std::sort(begin(order), input_end, std::greater<>());
 
