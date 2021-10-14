@@ -255,9 +255,6 @@ int main() {
             auto [input, output]{parse_signals(signals)};
             if (!circuit.contains(output)) {
                 circuit[output] = {logic::operator_of(name), input};
-                for (auto& in : input)
-                    std::cout << in << std::endl;
-                std::cout << std::endl;
             } else {
                 error::print_repetitive_output_message(line, output);
                 return EXIT_FAILURE;
