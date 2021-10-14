@@ -10,8 +10,6 @@ namespace logic {
     using binfunc = std::function<bool(binseq)>;
 
     struct loperator {
-        static constexpr uint8_t TWO_OR_MORE{UINT8_MAX};
-
         virtual bool operator()(const binseq& seq) const = 0;
     };
 
@@ -183,13 +181,10 @@ namespace {
         return order;
     }
 
-    size_t count_inputs(const gate_graph &circuit, const sigvector &signals) {
-        size_t counter = 0;
-
-        while (circuit.contains(signals[counter]))
-            counter++;
-
-        return counter;
+    size_t count_inputs(const gate_graph &circuit, const sigvector& order) {
+       return std::count_if(begin(order), end(order), [&](sig_t signal) {
+           return !circuit.contains(signal);
+       });
     }
 
     bool compute_gate(const gate_input& gate_in, sigmap<bool> &values) {
@@ -216,6 +211,7 @@ namespace {
 
         for (const auto& [_, value] : values)
             std::cout << value;
+        std::cout << std::endl;
     }
 
     void print_all_circuit_outputs(const gate_graph& circuit) {
