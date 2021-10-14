@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <vector>
 #include <numeric>
+#include <iterator>
 
 namespace logic {
     using binseq = std::vector<bool>;
@@ -139,13 +140,9 @@ namespace {
         sigvector inputs;
         std::istringstream sigstream{signals};
 
-        for (sig_t signal; sigstream >> signal;) {
-            if (inputs.empty()) {
-                output = signal;
-            } else {
-                inputs.push_back(signal);
-            }
-        }
+        sigstream >> output;
+        for (sig_t signal; sigstream >> signal;)
+            inputs.push_back(signal);
 
         return {inputs, output};
     }
@@ -258,6 +255,9 @@ int main() {
             auto [input, output]{parse_signals(signals)};
             if (!circuit.contains(output)) {
                 circuit[output] = {logic::operator_of(name), input};
+                for (auto& in : input)
+                    std::cout << in << std::endl;
+                std::cout << std::endl;
             } else {
                 error::print_repetitive_output_message(line, output);
                 return EXIT_FAILURE;
@@ -269,7 +269,10 @@ int main() {
     }
 
     auto order{get_signal_evaluation_order(circuit)};
-    print_all_circuit_outputs(circuit, order);
+    for (auto& sig : order) {
+        std::cout << sig << std::endl;
+    }
+//    print_all_circuit_outputs(circuit, order);
 
     return EXIT_SUCCESS;
 }
