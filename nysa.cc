@@ -5,10 +5,13 @@
 #include <numeric>
 
 namespace logic {
+    /* Sequence of binary digits */
     using binseq = std::vector<bool>;
 
+    /* Multi-variable logical function */
     using binfunc = std::function<bool(binseq)>;
 
+    /* Abstract functor for logical operations */
     struct loperator {
         virtual bool operator()(const binseq& seq) const = 0;
     };
@@ -73,6 +76,7 @@ namespace logic {
         }
     };
 
+    /* Factory function for binding name to operator */
     binfunc operator_of(const std::string& name) {
         if (name == lnot::name())
             return lnot();
@@ -103,15 +107,21 @@ namespace logic {
 }
 
 namespace {
+
+    /* Signal index */
     using sig_t = int32_t;
 
+    /* Sequence of signal indexes */
     using sigvector = std::vector<sig_t>;
 
+    /* Generic mapping of signal indexes */
     template<typename T>
-    using sigmap = std::map<sig_t, T>;
+    using sigmap = std::map<sig_t, bool>;
 
+    /* Information for logical processing of a gate */
     using gate_input = std::pair<logic::binfunc, sigvector>;
 
+    /* Graph representing the circuit of all logical gates */
     using gate_graph = std::unordered_map<sig_t, gate_input>;
 
     namespace error {
@@ -131,6 +141,7 @@ namespace {
     }
 
 
+    /* Transforms a sequence of strings to a choice regex pattern. */
     std::string pattern_of(const std::vector<std::string>& names) {
         const auto prefix{"\\s*("};
         const auto postfix{")(\\s+[1-9]\\d{0,8})"};
@@ -149,6 +160,7 @@ namespace {
         return prefix + infix + postfix;
     }
 
+    /* Validation of correct representation of an input line. */
     bool is_valid_input(const std::string& input) {
         const std::vector<std::regex> regexes = {
                 std::regex{pattern_of(logic::unary_names()) + "{2}\\s*"},
@@ -161,6 +173,7 @@ namespace {
         });
     }
 
+    /* Extracts the name of a gate and the signals. Assumption: input is valid. */
     std::pair<std::string, std::string> split_by_name(const std::string &input) {
         size_t div_pos{0};
         size_t name_start{SIZE_MAX};
@@ -178,6 +191,7 @@ namespace {
         return {name, signals};
     }
 
+    /* Transforms string-represented signals to a separate output and inputs */
     std::pair<sigvector, sig_t> parse_signals(const std::string &signals) {
         sig_t output;
         sigvector inputs{};
@@ -190,6 +204,8 @@ namespace {
         return {inputs, output};
     }
 
+    /* Visits a node in graph representing the logical gate
+     * system in order to sort it topologically */
     void visit_gate(sig_t output, const gate_graph& circuit,
                     sigvector& order, sigmap<bool>& visited) {
         if (visited.contains(output) && visited.at(output))
@@ -202,9 +218,9 @@ namespace {
 
         visited[output] = false;
 
+        /* Recursive visiting of the neighbouring nodes */
         if (circuit.contains(output)) {
             const auto &inputs{circuit.at(output).second};
-
             std::for_each(begin(inputs), end(inputs), [&](sig_t input) {
                 visit_gate(input, circuit, order, visited);
             });
@@ -214,25 +230,34 @@ namespace {
         order.push_back(output);
     }
 
+    /* Produces an order in which gates must be computed */
     sigvector get_signal_evaluation_order(const gate_graph& circuit) {
         sigvector order;
         sigmap<bool> visited;
 
+        /* Topological sort */
         std::for_each(begin(circuit), end(circuit), [&](auto entry) {
             const auto& output{entry.first};
             if (!visited.contains(output) || !visited.at(output))
                 visit_gate(output, circuit, order, visited);
         });
 
+        /* Moving leaf-nodes to the left */
+        std::sort(begin(order), end(order), [&](sig_t sigl, sig_t sigr) {
+            return !circuit.contains(sigl) && circuit.contains(sigr);
+        });
+
         return order;
     }
 
+    /* Counts independent input signals in gate system */
     size_t count_inputs(const gate_graph &circuit, const sigvector& order) {
         return std::count_if(begin(order), end(order), [&](sig_t signal) {
             return !circuit.contains(signal);
         });
     }
 
+    /* Evaluates an output for a specified signal input in the circuit */
     bool compute_gate(const gate_input& gate_in, sigmap<bool> &values) {
         logic::binseq input_values;
         const auto& inputs{gate_in.second};
@@ -244,6 +269,7 @@ namespace {
         return gate_in.first(input_values);
     }
 
+    /* Displays output for a single combination of input signals */
     void print_circuit_output(const gate_graph& circuit, sigmap<bool>& values,
                               const sigvector& order, size_t input_size) {
         auto start{std::next(begin(order), static_cast<int32_t>(input_size))};
@@ -260,26 +286,28 @@ namespace {
         std::cout << std::endl;
     }
 
+    /* Displays complete circuit output list */
     void print_all_circuit_outputs(const gate_graph& circuit) {
         sigvector order{get_signal_evaluation_order(circuit)};
+
         const auto input_count{count_inputs(circuit, order)};
         const auto combinations{1L << input_count};
+
+        /* Sort independent inputs by ascending order */
         auto input_end{std::next(begin(order), static_cast<int32_t>(input_count))};
-
-        std::sort(begin(order), end(order), [&](sig_t sigl, sig_t sigr) {
-            return !circuit.contains(sigl) && circuit.contains(sigr);
-        });
-
         std::sort(begin(order), input_end, std::greater<>());
 
         sigmap<bool> values;
         for (size_t input{0}; input < static_cast<size_t>(combinations); input++) {
             size_t input_ordinal = input;
+
+            /* Convert a number to a binary sequence of a signal values */
             for (size_t bit{0}; bit < input_count; bit++) {
                 auto sig_val{static_cast<bool>(input_ordinal % 2)};
                 values[order[bit]] = sig_val;
                 input_ordinal /= 2;
             }
+
             print_circuit_output(circuit, values, order, input_count);
         }
     }
