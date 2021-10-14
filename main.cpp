@@ -217,10 +217,10 @@ namespace {
             std::cout << value;
     }
 
-    void print_all_circuit_outputs(const gate_graph& circuit, const sigvector& order) {
+    void print_all_circuit_outputs(const gate_graph& circuit, sigvector& order) {
         const auto input_count{count_inputs(circuit, order)};
         const auto combinations{1L << input_count};
-        auto input_end{std::next(begin(order), static_cast<int32_t>(input_count)};
+        auto input_end{std::next(begin(order), static_cast<int32_t>(input_count))};
 
         std::sort(begin(order), input_end, std::greater<>());
 
