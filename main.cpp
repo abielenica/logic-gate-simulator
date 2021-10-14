@@ -163,11 +163,16 @@ namespace {
 
     std::pair<std::string, std::string> split_by_name(const std::string &input) {
         size_t div_pos{0};
+        size_t name_start{SIZE_MAX};
 
-        while (!isalpha(input[div_pos]) || isalpha(input[div_pos + 1]))
+        while (!isalpha(input[div_pos]) || isalpha(input[div_pos + 1])) {
+            if (isalpha(input[div_pos]) && name_start == SIZE_MAX)
+                name_start = div_pos;
+
             div_pos++;
+        }
 
-        auto name{input.substr(0, div_pos + 1)};
+        auto name{input.substr(name_start, div_pos + 1 - name_start)};
         auto signals{input.substr(div_pos + 1, input.size() - div_pos - 1)};
 
         return {name, signals};
