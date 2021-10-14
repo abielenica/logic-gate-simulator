@@ -51,7 +51,7 @@ namespace logic {
         }
     };
 
-    binfunc match_function(const std::string& name) {
+    binfunc operator_of(const std::string& name) {
         if (name == "NOT")
             return lnot();
         else if (name == "XOR")
@@ -104,7 +104,7 @@ namespace {
         }
     }
 
-    std::regex make_sig_regex(in_type type) {
+    std::regex make_signal_regex(in_type type) {
         const std::string sig_pattern{("( [1-9]\\d{0,8})")};
 
         if (type == in_type::MULTI)
@@ -114,6 +114,12 @@ namespace {
         auto repetitions{std::to_string(ordinal + 1)};
 
         return std::regex(sig_pattern + "{" + repetitions + "}");
+    }
+
+    auto regex_matcher() {
+        return [](const gate_t &gate) {
+            return std::make_pair(gate.first, make_signal_regex(gate.second));
+        };
     }
 
     std::pair<std::string, std::string> split_by_first_space(std::string &src) {
@@ -128,56 +134,54 @@ namespace {
         return {first, second};
     }
 
-    auto regex_matcher() {
-        return [](const gate_t &gate) {
-            return std::make_pair(gate.first, make_sig_regex(gate.second));
-        };
-    }
-    
-    void visit_node(sig_t node, const gate_graph &graph,
-                    std::vector<sig_t> &sorted_input,
-                    std::unordered_map<sig_t, bool> &visited_status) {
-        if (visited_status.contains(node) && visited_status.at(node))
-            return;
-        if (visited_status.contains(node) && !visited_status.at(node)) {
-            error::print_circuit_cycle_message();
-            return; // TODO: flaga?
-        }
-        visited_status.insert({node, false});
-        for (sig_t input_signal: graph.at(node).second) {
-            visit_node(input_signal, graph, sorted_input, visited_status);
-        }
-        visited_status[node] = true;
-        sorted_input.push_back(node);
-    }
-
-    std::vector<sig_t> order_graph_by_input(const gate_graph &graph) {
-      sigmap<bool> marked_status;
-      sigvector sorted_input;
-      // To nie robi tego co opisuje algorytm, tylko przechodzi raz po wszystkich,
-      // ale może się mylę???
-      for (const auto &node : graph) {
-        if (!marked_status.contains(node.first) || !marked_status.at(node.first))
-          visit_node(node.first, graph, sorted_input, marked_status);
-      }
-      return sorted_input;
-    }
-
     std::pair<sigvector, sig_t> parse_signals(const std::string &signals) {
+        sig_t output;
+        sigvector inputs;
         std::istringstream sigstream{signals};
 
-        sig_t output;
-        std::vector<sig_t> input;
-
         for (sig_t signal; sigstream >> signal;) {
-            if (input.empty()) {
+            if (inputs.empty()) {
                 output = signal;
             } else {
-                input.push_back(signal);
+                inputs.push_back(signal);
             }
         }
 
-        return {input, output};
+        return {inputs, output};
+    }
+
+    void visit_gate(sig_t output, const gate_graph& circuit,
+                    sigvector& order, sigmap<bool>& visited) {
+        if (visited.contains(output) && visited.at(output))
+            return;
+
+        if (visited.contains(output) && !visited.at(output)) {
+            error::print_circuit_cycle_message();
+            exit(EXIT_FAILURE);
+        }
+
+        visited[output] = false;
+
+        const auto& inputs{circuit.at(output).second};
+        std::for_each(cbegin(inputs), cend(inputs), [&](sig_t input) {
+            visit_gate(input, circuit, order, visited);
+        });
+
+        visited[output] = true;
+        order.push_back(output);
+    }
+
+    sigvector get_signal_evaluation_order(const gate_graph& circuit) {
+        sigvector order;
+        sigmap<bool> visited;
+
+        std::for_each(cbegin(circuit), cend(circuit), [&](auto entry) {
+            const auto& inputs{entry.first};
+            if (!visited.contains(inputs) || !visited.at(inputs))
+                visit_gate(inputs, circuit, order, visited);
+        });
+
+        return order;
     }
 
     size_t count_inputs(const gate_graph &circuit, const sigvector &signals) {
@@ -189,47 +193,46 @@ namespace {
         return counter;
     }
 
-    bool evaluate_gate(const gate_input &in, sigmap<bool> &values) {
-        logic::binseq input;
+    bool compute_gate(const gate_input& gate_in, sigmap<bool> &values) {
+        logic::binseq input_values;
+        const auto& inputs{gate_in.second};
 
-        for (int i: in.second)
-            input.push_back(values.at(i));
+        std::for_each(cbegin(inputs), cend(inputs), [&](sig_t input) {
+            input_values.push_back(values[input]);
+        });
 
-        return in.first(input);
+        return gate_in.first(input_values);
     }
 
-    void compute_and_print_single_circuit_run(const gate_graph &circuit,
-                                              sigmap<bool> &signal_values,
-                                              const std::vector<sig_t> &signals,
-                                              long input_size) {
-        // tu z tymi iteratorami to się zagubiłam w akcji totalnie
-        for (auto it = signals.cbegin() + input_size; it != signals.end(); ++it) {
-            signal_values.insert_or_assign(
-                    *it, evaluate_gate((circuit.at(*it)), signal_values));
-        }
+    void print_circuit_output(const gate_graph& circuit, sigmap<bool>& values,
+                              const sigvector& order, size_t input_size) {
+        auto start{std::next(begin(order), static_cast<int32_t>(input_size))};
 
-        for (const auto& [_, value] : signal_values)
+        std::for_each(start, end(order), [&](sig_t signal) {
+            const auto& outputs{circuit.at(signal)};
+            values[signal] = compute_gate(outputs, values);
+        });
+
+        for (const auto& [_, value] : values)
             std::cout << value;
     }
 
-    void compute_and_print_all_possible_circuit_runs(const gate_graph &circuit, const std::vector<sig_t> &signals) {
-        const size_t inputs_size = count_inputs(circuit, signals);
+    void print_all_circuit_outputs(const gate_graph& circuit, const sigvector& order) {
+        const auto input_count{count_inputs(circuit, order)};
+        auto combinations{static_cast<int32_t>(1L << input_count)};
+        auto input_end{std::next(begin(order), combinations)};
+
+        std::sort(begin(order), input_end, std::greater<>());
 
         sigmap<bool> values;
-        auto possible_inputs{static_cast<int32_t>(1L << inputs_size)};
-        auto input_end{std::next(begin(signals), possible_inputs)};
-
-        std::sort(begin(signals), input_end, std::greater<>());
-
-        for (size_t i = 0; i < possible_inputs; i++) {
-            size_t input_combination_no = i;
-            for (size_t j = 0; j < inputs_size; j++) {
-                size_t signal_value = input_combination_no % 2;
-                values.insert_or_assign(signals[j], signal_value);
-                input_combination_no /= 2;
+        for (size_t input{0}; input < combinations; input++) {
+            size_t input_ordinal = input;
+            for (size_t bit{0}; bit < input_count; bit++) {
+                auto sig_val{static_cast<bool>(input_ordinal % 2)};
+                values[order[bit]] = sig_val;
+                input_ordinal /= 2;
             }
-            compute_and_print_single_circuit_run(circuit, values, signals,
-                                                 (long) inputs_size);
+            print_circuit_output(circuit, values, order, input_count);
         }
     }
 }
@@ -246,17 +249,17 @@ int main() {
                    std::inserter(sig_regex, end(sig_regex)),
                    regex_matcher());
 
-    gate_graph graph;
+    gate_graph circuit;
     std::string gate_info;
 
-    for (uint64_t line = 1; std::getline(std::cin, gate_info); line++) {
+    for (uint64_t line{1}; std::getline(std::cin, gate_info); line++) {
         auto [name, signals]{split_by_first_space(gate_info)};
         if (std::regex_match(signals, sig_regex[name])) {
             auto [input, output]{parse_signals(name)};
-            if (!graph.contains(output)) {
-                graph[output] = {logic::match_function(name), input};
+            if (!circuit.contains(output)) {
+                circuit[output] = {logic::operator_of(name), input};
             } else {
-                error::print_repetitive_output_message();
+                error::print_repetitive_output_message(line, output);
                 return EXIT_FAILURE;
             }
         } else {
@@ -264,6 +267,9 @@ int main() {
             return EXIT_FAILURE;
         }
     }
+
+    auto order{get_signal_evaluation_order(circuit)};
+    print_all_circuit_outputs(circuit, order);
 
     return EXIT_SUCCESS;
 }
