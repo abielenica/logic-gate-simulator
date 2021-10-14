@@ -255,7 +255,7 @@ int main() {
     for (uint64_t line{1}; std::getline(std::cin, gate_info); line++) {
         auto [name, signals]{split_by_first_space(gate_info)};
         if (std::regex_match(signals, sig_regex[name])) {
-            auto [input, output]{parse_signals(name)};
+            auto [input, output]{parse_signals(signals)};
             if (!circuit.contains(output)) {
                 circuit[output] = {logic::operator_of(name), input};
             } else {
