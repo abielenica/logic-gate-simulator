@@ -3,7 +3,6 @@
 #include <unordered_map>
 #include <vector>
 #include <numeric>
-#include <iterator>
 
 namespace logic {
     using binseq = std::vector<bool>;
@@ -137,7 +136,7 @@ namespace {
 
     std::pair<sigvector, sig_t> parse_signals(const std::string &signals) {
         sig_t output;
-        sigvector inputs;
+        sigvector inputs{};
         std::istringstream sigstream{signals};
 
         sigstream >> output;
@@ -159,10 +158,13 @@ namespace {
 
         visited[output] = false;
 
-        const auto& inputs{circuit.at(output).second};
-        std::for_each(begin(inputs), end(inputs), [&](sig_t input) {
-            visit_gate(input, circuit, order, visited);
-        });
+        if (circuit.contains(output)) {
+            const auto &inputs{circuit.at(output).second};
+
+            std::for_each(begin(inputs), end(inputs), [&](sig_t input) {
+                visit_gate(input, circuit, order, visited);
+            });
+        }
 
         visited[output] = true;
         order.push_back(output);
@@ -173,9 +175,9 @@ namespace {
         sigmap<bool> visited;
 
         std::for_each(begin(circuit), end(circuit), [&](auto entry) {
-            const auto& inputs{entry.first};
-            if (!visited.contains(inputs) || !visited.at(inputs))
-                visit_gate(inputs, circuit, order, visited);
+            const auto& output{entry.first};
+            if (!visited.contains(output) || !visited.at(output))
+                visit_gate(output, circuit, order, visited);
         });
 
         return order;
@@ -206,10 +208,11 @@ namespace {
         auto start{std::next(begin(order), static_cast<int32_t>(input_size))};
 
         std::for_each(start, end(order), [&](sig_t signal) {
-            const auto& outputs{circuit.at(signal)};
-            values[signal] = compute_gate(outputs, values);
+            if (circuit.contains(signal)) {
+                const auto &outputs{circuit.at(signal)};
+                values[signal] = compute_gate(outputs, values);
+            }
         });
-
         for (const auto& [_, value] : values)
             std::cout << value;
     }
@@ -266,10 +269,7 @@ int main() {
     }
 
     auto order{get_signal_evaluation_order(circuit)};
-    for (auto& sig : order) {
-        std::cout << sig << std::endl;
-    }
-//    print_all_circuit_outputs(circuit, order);
+    print_all_circuit_outputs(circuit, order);
 
     return EXIT_SUCCESS;
 }
